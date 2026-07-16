@@ -12,7 +12,7 @@ WORKDIR /app
 COPY package*.json ./
 
 # Installer uniquement les dépendances de production
-RUN npm ci --only=production && npm cache clean --force
+RUN npm install --only=production && npm cache clean --force
 
 # ── Stage 2 : Image finale ────────────────────────────────────────────────────
 FROM node:20-alpine AS runtime
