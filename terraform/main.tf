@@ -158,13 +158,13 @@ resource "aws_security_group" "front" {
   description = "SG instance Front : Nginx + app front"
   vpc_id      = aws_vpc.main.id
 
-  # SSH depuis l'IP admin uniquement
+  # SSH depuis partout (nécessaire pour GitHub Actions et administration)
   ingress {
-    description = "SSH admin"
+    description = "SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = [var.admin_ip]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # HTTP depuis internet
