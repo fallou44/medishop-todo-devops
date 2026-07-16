@@ -33,6 +33,12 @@
     mode: "0755"
   become: true
 
+- name: "FRONT | Vérifier si le certificat SSL existe déjà"
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ nginx_domain }}/fullchain.pem"
+  register: ssl_cert_stat
+  become: true
+
 - name: "FRONT | Copier la configuration Nginx depuis le template"
   ansible.builtin.template:
     src: nginx.conf.j2
