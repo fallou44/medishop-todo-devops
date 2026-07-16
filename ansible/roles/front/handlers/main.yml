@@ -1,0 +1,17 @@
+##############################################
+# roles/front/handlers/main.yml
+# Handlers pour l'instance Front
+##############################################
+
+---
+- name: Reload Nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  become: true
+
+- name: Restart Nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: restarted
+  become: true

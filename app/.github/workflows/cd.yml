@@ -1,0 +1,333 @@
+##############################################
+# .github/workflows/cd.yml
+# CD : Déploiement automatique sur AWS EC2
+# Déclenché après un push sur main
+#
+# SECRETS GITHUB REQUIS (Settings > Secrets):
+#   DOCKER_USERNAME      - Nom d'utilisateur Docker Hub
+#   DOCKER_TOKEN         - Token Docker Hub (Personal Access Token)
+#   SSH_PRIVATE_KEY      - Clé privée SSH (contenu du fichier .pem)
+#   FRONT_HOST           - IP publique de l'instance Front
+#   BACK_HOST            - IP privée de l'instance Back
+#   MONGO_APP_USERNAME   - Nom d'utilisateur MongoDB applicatif
+#   MONGO_APP_PASSWORD   - Mot de passe MongoDB applicatif
+#   MONGO_DB_NAME        - Nom de la base de données MongoDB
+#   JWT_SECRET           - Secret JWT pour l'API
+#   FRONTEND_URL         - URL du frontend (ex: https://todo.medishop.fr)
+##############################################
+
+name: CD — Deploy to AWS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:  # Déclenchement manuel possible
+
+env:
+  BACK_IMAGE:  ${{ secrets.DOCKER_USERNAME }}/medishop-todo-back
+  FRONT_IMAGE: ${{ secrets.DOCKER_USERNAME }}/medishop-todo-front
+  SSH_USER:    ubuntu
+
+jobs:
+  # ══════════════════════════════════════════════════════════════════
+  # JOB 1 : Build & Push Backend
+  # ══════════════════════════════════════════════════════════════════
+  build-back:
+    name: "🔨 Build Backend"
+    runs-on: ubuntu-latest
+    if: |
+      contains(github.event.head_commit.message, '[all]') ||
+      contains(github.event.head_commit.message, '[back]') ||
+      github.event_name == 'workflow_dispatch'
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: "📥 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "🐳 Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "🔐 Login Docker Hub"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: "🏷️ Métadonnées"
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.BACK_IMAGE }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: "🔨 Build & Push Backend"
+        uses: docker/build-push-action@v5
+        with:
+          context:   app/backend
+          file:      app/backend/Dockerfile
+          push:      true
+          tags:      ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          platforms: linux/amd64
+
+  # ══════════════════════════════════════════════════════════════════
+  # JOB 2 : Build & Push Frontend
+  # ══════════════════════════════════════════════════════════════════
+  build-front:
+    name: "🎨 Build Frontend"
+    runs-on: ubuntu-latest
+    if: |
+      contains(github.event.head_commit.message, '[all]') ||
+      contains(github.event.head_commit.message, '[front]') ||
+      github.event_name == 'workflow_dispatch'
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: "📥 Checkout"
+        uses: actions/checkout@v4
+
+      - name: "🐳 Docker Buildx"
+        uses: docker/setup-buildx-action@v3
+
+      - name: "🔐 Login Docker Hub"
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: "🏷️ Métadonnées"
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.FRONT_IMAGE }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest
+
+      - name: "🎨 Build & Push Frontend"
+        uses: docker/build-push-action@v5
+        with:
+          context:   app/frontend
+          file:      app/frontend/Dockerfile
+          push:      true
+          tags:      ${{ steps.meta.outputs.tags }}
+          build-args: |
+            REACT_APP_API_URL=${{ secrets.FRONTEND_URL }}/api
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          platforms: linux/amd64
+
+  # ══════════════════════════════════════════════════════════════════
+  # JOB 3 : Déploiement Backend sur EC2
+  # ══════════════════════════════════════════════════════════════════
+  deploy-back:
+    name: "🚀 Deploy Backend → EC2"
+    runs-on: ubuntu-latest
+    needs: build-back
+    if: always() && needs.build-back.result == 'success'
+    environment: production
+
+    steps:
+      - name: "🔑 Configurer la clé SSH"
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/medishop.pem
+          chmod 600 ~/.ssh/medishop.pem
+          # Ajouter le front comme known_host (bastion pour accéder au back)
+          ssh-keyscan -H ${{ secrets.FRONT_HOST }} >> ~/.ssh/known_hosts
+
+      - name: "🚀 Déployer le Backend via SSH (avec ProxyJump)"
+        run: |
+          # Script de déploiement avec gestion des erreurs et rollback
+          ssh -i ~/.ssh/medishop.pem \
+              -o ProxyJump="${{ env.SSH_USER }}@${{ secrets.FRONT_HOST }}" \
+              -o StrictHostKeyChecking=no \
+              "${{ env.SSH_USER }}@${{ secrets.BACK_HOST }}" << 'DEPLOY_SCRIPT'
+
+          set -e
+          CONTAINER="medishop-back"
+          IMAGE="${{ env.BACK_IMAGE }}:latest"
+          NETWORK="medishop-network"
+
+          echo "=== Déploiement Backend : $(date) ==="
+
+          # Sauvegarder l'image actuelle pour rollback
+          CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' $CONTAINER 2>/dev/null || echo "none")
+          echo "Image actuelle : $CURRENT_IMAGE"
+
+          # Créer le réseau s'il n'existe pas
+          docker network inspect $NETWORK >/dev/null 2>&1 || \
+            docker network create $NETWORK
+
+          # Pull de la nouvelle image
+          echo "Pull de la nouvelle image..."
+          docker pull $IMAGE
+
+          # Arrêt et suppression du conteneur existant (sans erreur si absent)
+          if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
+            echo "Arrêt du conteneur existant..."
+            docker stop $CONTAINER || true
+            docker rm   $CONTAINER || true
+          fi
+
+          # Démarrage du nouveau conteneur
+          echo "Démarrage du nouveau conteneur..."
+          docker run -d \
+            --name $CONTAINER \
+            --restart unless-stopped \
+            --network $NETWORK \
+            -p 3000:3000 \
+            -e NODE_ENV=production \
+            -e PORT=3000 \
+            -e MONGODB_URI="mongodb://${{ secrets.MONGO_APP_USERNAME }}:${{ secrets.MONGO_APP_PASSWORD }}@$(cat /etc/medishop/db_ip 2>/dev/null || echo 'localhost'):27017/${{ secrets.MONGO_DB_NAME }}?authSource=${{ secrets.MONGO_DB_NAME }}" \
+            -e JWT_SECRET="${{ secrets.JWT_SECRET }}" \
+            -e FRONTEND_URL="${{ secrets.FRONTEND_URL }}" \
+            $IMAGE
+
+          # Vérification du démarrage (attendre 10s)
+          echo "Vérification du health check..."
+          sleep 10
+          if docker ps --filter "name=${CONTAINER}" --filter "status=running" | grep -q $CONTAINER; then
+            echo "✅ Backend déployé avec succès !"
+            docker logs $CONTAINER --tail 20
+          else
+            echo "❌ ÉCHEC : Le conteneur n'est pas démarré. Rollback..."
+            docker rm -f $CONTAINER || true
+            if [ "$CURRENT_IMAGE" != "none" ]; then
+              docker run -d --name $CONTAINER --restart unless-stopped \
+                --network $NETWORK -p 3000:3000 \
+                -e NODE_ENV=production \
+                $CURRENT_IMAGE
+              echo "♻️ Rollback vers $CURRENT_IMAGE effectué"
+            fi
+            exit 1
+          fi
+
+          # Nettoyage des images inutilisées
+          docker image prune -f
+          echo "=== Déploiement terminé : $(date) ==="
+          DEPLOY_SCRIPT
+
+  # ══════════════════════════════════════════════════════════════════
+  # JOB 4 : Déploiement Frontend sur EC2
+  # ══════════════════════════════════════════════════════════════════
+  deploy-front:
+    name: "🎨 Deploy Frontend → EC2"
+    runs-on: ubuntu-latest
+    needs: [build-front, deploy-back]
+    if: |
+      always() &&
+      needs.build-front.result == 'success' &&
+      (needs.deploy-back.result == 'success' || needs.deploy-back.result == 'skipped')
+    environment: production
+
+    steps:
+      - name: "🔑 Configurer la clé SSH"
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/medishop.pem
+          chmod 600 ~/.ssh/medishop.pem
+          ssh-keyscan -H ${{ secrets.FRONT_HOST }} >> ~/.ssh/known_hosts
+
+      - name: "🎨 Déployer le Frontend via SSH"
+        run: |
+          ssh -i ~/.ssh/medishop.pem \
+              -o StrictHostKeyChecking=no \
+              "${{ env.SSH_USER }}@${{ secrets.FRONT_HOST }}" << 'DEPLOY_SCRIPT'
+
+          set -e
+          CONTAINER="medishop-front"
+          IMAGE="${{ env.FRONT_IMAGE }}:latest"
+          NETWORK="medishop-network"
+
+          echo "=== Déploiement Frontend : $(date) ==="
+
+          # Sauvegarder l'image actuelle pour rollback
+          CURRENT_IMAGE=$(docker inspect --format='{{.Config.Image}}' $CONTAINER 2>/dev/null || echo "none")
+
+          # Créer le réseau s'il n'existe pas
+          docker network inspect $NETWORK >/dev/null 2>&1 || \
+            docker network create $NETWORK
+
+          # Pull de la nouvelle image
+          docker pull $IMAGE
+
+          # Arrêt et suppression du conteneur existant
+          if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER}$"; then
+            docker stop $CONTAINER || true
+            docker rm   $CONTAINER || true
+          fi
+
+          # Démarrage du nouveau conteneur
+          docker run -d \
+            --name $CONTAINER \
+            --restart unless-stopped \
+            --network $NETWORK \
+            -p 3001:80 \
+            $IMAGE
+
+          # Vérification
+          sleep 5
+          if docker ps --filter "name=${CONTAINER}" --filter "status=running" | grep -q $CONTAINER; then
+            echo "✅ Frontend déployé avec succès !"
+            # Recharger Nginx pour propager les changements
+            sudo systemctl reload nginx || true
+          else
+            echo "❌ ÉCHEC du déploiement Frontend. Rollback..."
+            docker rm -f $CONTAINER || true
+            if [ "$CURRENT_IMAGE" != "none" ]; then
+              docker run -d --name $CONTAINER --restart unless-stopped \
+                --network $NETWORK -p 3001:80 $CURRENT_IMAGE
+              echo "♻️ Rollback vers $CURRENT_IMAGE effectué"
+            fi
+            exit 1
+          fi
+
+          docker image prune -f
+          echo "=== Déploiement Frontend terminé : $(date) ==="
+          DEPLOY_SCRIPT
+
+      - name: "🌐 Vérification du site web"
+        run: |
+          echo "Attente de 15s pour la stabilisation..."
+          sleep 15
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            --max-time 30 \
+            "${{ secrets.FRONTEND_URL }}" || echo "000")
+          echo "Code HTTP reçu : $HTTP_CODE"
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "301" ] && [ "$HTTP_CODE" != "302" ]; then
+            echo "❌ Le site ne répond pas correctement (HTTP $HTTP_CODE)"
+            exit 1
+          fi
+          echo "✅ Site accessible : ${{ secrets.FRONTEND_URL }}"
+
+  # ══════════════════════════════════════════════════════════════════
+  # JOB 5 : Notification de déploiement
+  # ══════════════════════════════════════════════════════════════════
+  notify:
+    name: "📢 Notification"
+    runs-on: ubuntu-latest
+    needs: [deploy-back, deploy-front]
+    if: always()
+
+    steps:
+      - name: "📊 Résumé du déploiement"
+        run: |
+          echo "================================================"
+          echo "  RÉSUMÉ DU DÉPLOIEMENT MEDISHOP TODO"
+          echo "================================================"
+          echo "Commit   : ${{ github.sha }}"
+          echo "Auteur   : ${{ github.actor }}"
+          echo "Message  : ${{ github.event.head_commit.message }}"
+          echo "Backend  : ${{ needs.deploy-back.result }}"
+          echo "Frontend : ${{ needs.deploy-front.result }}"
+          echo "URL      : ${{ secrets.FRONTEND_URL }}"
+          echo "================================================"

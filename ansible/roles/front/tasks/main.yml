@@ -1,0 +1,96 @@
+##############################################
+# roles/front/tasks/main.yml
+# Configuration de l'instance Front
+# - Nginx (reverse proxy)
+# - Certbot (HTTPS Let's Encrypt)
+# - Démarrage conteneur front React
+##############################################
+
+---
+# ── Nginx ─────────────────────────────────────────────────────────────────
+
+- name: "FRONT | Installer Nginx et Certbot"
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - certbot
+      - python3-certbot-nginx
+    state: present
+    update_cache: true
+  become: true
+
+- name: "FRONT | Démarrer et activer Nginx"
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true
+  become: true
+
+- name: "FRONT | Créer le répertoire de configuration Nginx"
+  ansible.builtin.file:
+    path: /etc/nginx/sites-available
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: "FRONT | Copier la configuration Nginx depuis le template"
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "/etc/nginx/sites-available/{{ nginx_config_name }}"
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: Reload Nginx
+
+- name: "FRONT | Activer le site Nginx (créer le lien symbolique)"
+  ansible.builtin.file:
+    src: "/etc/nginx/sites-available/{{ nginx_config_name }}"
+    dest: "/etc/nginx/sites-enabled/{{ nginx_config_name }}"
+    state: link
+  become: true
+  notify: Reload Nginx
+
+- name: "FRONT | Supprimer le site default de Nginx"
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  become: true
+  notify: Reload Nginx
+
+- name: "FRONT | Tester la configuration Nginx"
+  ansible.builtin.command: nginx -t
+  become: true
+  changed_when: false
+
+# ── Conteneur Front ─────────────────────────────────────────────────────────
+
+- name: "FRONT | Créer le réseau Docker pour l'application"
+  community.docker.docker_network:
+    name: "{{ docker_network_name }}"
+    state: present
+
+- name: "FRONT | Puller l'image du conteneur Front"
+  community.docker.docker_image:
+    name: "{{ front_image }}:latest"
+    source: pull
+
+- name: "FRONT | Arrêter l'ancien conteneur Front (si existant)"
+  community.docker.docker_container:
+    name: "{{ front_container_name }}"
+    state: absent
+  ignore_errors: true
+
+- name: "FRONT | Démarrer le conteneur Front"
+  community.docker.docker_container:
+    name: "{{ front_container_name }}"
+    image: "{{ front_image }}:latest"
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "{{ front_port }}:80"
+    networks:
+      - name: "{{ docker_network_name }}"
+    env:
+      REACT_APP_API_URL: "https://{{ nginx_domain }}/api"
+      NODE_ENV: "{{ node_env }}"

@@ -1,0 +1,83 @@
+##############################################
+# roles/db/tasks/main.yml
+# Configuration de l'instance DB (MongoDB)
+##############################################
+
+---
+- name: "DB | Créer le répertoire de données MongoDB"
+  ansible.builtin.file:
+    path: /data/mongodb
+    state: directory
+    owner: ubuntu
+    group: ubuntu
+    mode: "0755"
+  become: true
+
+- name: "DB | Créer le réseau Docker"
+  community.docker.docker_network:
+    name: "{{ docker_network_name }}"
+    state: present
+
+- name: "DB | Vérifier si le conteneur MongoDB existe déjà"
+  community.docker.docker_container_info:
+    name: "{{ db_container_name }}"
+  register: db_exists
+  ignore_errors: true
+
+- name: "DB | Démarrer le conteneur MongoDB (premier déploiement)"
+  community.docker.docker_container:
+    name: "{{ db_container_name }}"
+    image: "{{ db_image }}"
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "{{ db_port }}:27017"
+    networks:
+      - name: "{{ docker_network_name }}"
+    volumes:
+      - "/data/mongodb:/data/db"
+    env:
+      MONGO_INITDB_ROOT_USERNAME: "{{ mongo_root_username }}"
+      MONGO_INITDB_ROOT_PASSWORD: "{{ mongo_root_password }}"
+      MONGO_INITDB_DATABASE: "{{ mongo_db_name }}"
+  when: not db_exists.exists
+
+- name: "DB | S'assurer que MongoDB est bien démarré"
+  community.docker.docker_container:
+    name: "{{ db_container_name }}"
+    state: started
+  when: db_exists.exists
+
+- name: "DB | Attendre que MongoDB soit prêt (port 27017)"
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ db_port }}"
+    delay: 5
+    timeout: 60
+
+- name: "DB | Créer l'utilisateur applicatif MongoDB"
+  community.docker.docker_container_exec:
+    container: "{{ db_container_name }}"
+    command: >
+      mongosh --username {{ mongo_root_username }}
+              --password {{ mongo_root_password }}
+              --eval "
+                use {{ mongo_db_name }};
+                if (db.getUser('{{ mongo_app_username }}') == null) {
+                  db.createUser({
+                    user: '{{ mongo_app_username }}',
+                    pwd:  '{{ mongo_app_password }}',
+                    roles: [{role: 'readWrite', db: '{{ mongo_db_name }}'}]
+                  });
+                  print('Utilisateur créé');
+                } else {
+                  print('Utilisateur existant');
+                }
+              "
+  register: mongo_user_result
+  ignore_errors: true
+
+- name: "DB | Afficher le résultat de création d'utilisateur"
+  ansible.builtin.debug:
+    msg: "{{ mongo_user_result.stdout }}"
+  ignore_errors: true

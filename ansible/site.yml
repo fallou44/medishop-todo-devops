@@ -1,0 +1,113 @@
+##############################################
+# site.yml - Playbook principal MediShop
+# Orchestre la configuration de toutes les instances
+# Idempotent : peut être rejoué sans casser l'existant
+##############################################
+
+---
+- name: "=== PROVISIONING MEDISHOP TODO APP ==="
+  hosts: all
+  gather_facts: true
+  become: false
+
+  pre_tasks:
+    - name: "Vérifier la connectivité SSH"
+      ansible.builtin.ping:
+
+    - name: "Afficher les informations de l'hôte"
+      ansible.builtin.debug:
+        msg: |
+          Hôte      : {{ inventory_hostname }}
+          IP        : {{ ansible_host }}
+          OS        : {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Arch      : {{ ansible_architecture }}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAY 1 : Installation commune (Docker sur tous les hôtes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+- name: "PLAY 1 | Configuration commune (Docker)"
+  hosts: medishop
+  become: true
+  roles:
+    - role: common
+      tags: [common, docker]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAY 2 : Configuration DB (en premier, car les autres en dépendent)
+# ─────────────────────────────────────────────────────────────────────────────
+
+- name: "PLAY 2 | Configuration Base de données (MongoDB)"
+  hosts: db
+  become: true
+  roles:
+    - role: db
+      tags: [db, mongodb]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAY 3 : Configuration Back (API Node.js)
+# ─────────────────────────────────────────────────────────────────────────────
+
+- name: "PLAY 3 | Configuration Backend (API Node.js)"
+  hosts: back
+  become: true
+  roles:
+    - role: back
+      tags: [back, api]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAY 4 : Configuration Front (Nginx + React)
+# ─────────────────────────────────────────────────────────────────────────────
+
+- name: "PLAY 4 | Configuration Front (Nginx + React)"
+  hosts: front
+  become: true
+  roles:
+    - role: front
+      tags: [front, nginx]
+
+  post_tasks:
+    - name: "FRONT | Obtenir le certificat SSL Let's Encrypt"
+      ansible.builtin.command: >
+        certbot --nginx
+        -d {{ nginx_domain }}
+        --email {{ certbot_email }}
+        --agree-tos
+        --non-interactive
+        --redirect
+      args:
+        creates: "/etc/letsencrypt/live/{{ nginx_domain }}/fullchain.pem"
+      become: true
+      tags: [ssl, certbot]
+
+    - name: "FRONT | Recharger Nginx après certificat SSL"
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+      become: true
+      tags: [ssl, nginx]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PLAY 5 : Vérification finale
+# ─────────────────────────────────────────────────────────────────────────────
+
+- name: "PLAY 5 | Vérification du déploiement"
+  hosts: all
+  gather_facts: false
+
+  tasks:
+    - name: "CHECK | Vérifier que Docker est en cours d'exécution"
+      ansible.builtin.command: docker ps
+      register: docker_ps
+      changed_when: false
+
+    - name: "CHECK | Afficher les conteneurs actifs"
+      ansible.builtin.debug:
+        msg: "{{ docker_ps.stdout_lines }}"
+
+  post_tasks:
+    - name: "=== DÉPLOIEMENT TERMINÉ ==="
+      ansible.builtin.debug:
+        msg: |
+          ✅ MediShop Todo App déployée avec succès !
+          🌐 URL : https://{{ hostvars[groups['front'][0]]['nginx_domain'] | default('votre-domaine') }}

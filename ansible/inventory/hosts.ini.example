@@ -1,0 +1,24 @@
+##############################################
+# hosts.ini.example - Inventaire Ansible exemple
+# Remplacer les IPs par celles de terraform output
+##############################################
+
+[front]
+front-server ansible_host=<FRONT_PUBLIC_IP> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/medishop-key.pem
+
+[back]
+back-server ansible_host=<BACK_PRIVATE_IP> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/medishop-key.pem \
+    ansible_ssh_common_args='-o ProxyJump=ubuntu@<FRONT_PUBLIC_IP> -o StrictHostKeyChecking=no'
+
+[db]
+db-server ansible_host=<DB_PRIVATE_IP> ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/medishop-key.pem \
+    ansible_ssh_common_args='-o ProxyJump=ubuntu@<FRONT_PUBLIC_IP> -o StrictHostKeyChecking=no'
+
+[all:vars]
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+ansible_python_interpreter=/usr/bin/python3
+
+[medishop:children]
+front
+back
+db

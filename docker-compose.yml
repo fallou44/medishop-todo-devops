@@ -1,0 +1,95 @@
+##############################################
+# docker-compose.yml - Environnement de développement local
+# Simule l'architecture 3 couches (Front, Back, DB)
+# Usage : docker compose up --build
+##############################################
+
+version: "3.9"
+
+services:
+
+  # ── Base de données MongoDB ─────────────────────────────────────
+  db:
+    image: mongo:7.0
+    container_name: medishop-db
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme}
+      MONGO_INITDB_DATABASE:      ${MONGO_DB_NAME:-medishop_todos}
+    volumes:
+      - mongo_data:/data/db
+      - ./app/db/init.js:/docker-entrypoint-initdb.d/init.js:ro
+    networks:
+      - medishop-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  # ── API Backend Node.js ─────────────────────────────────────────
+  back:
+    build:
+      context: ./app/backend
+      dockerfile: Dockerfile
+    container_name: medishop-back
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV:    development
+      PORT:        3000
+      MONGODB_URI: mongodb://${MONGO_APP_USERNAME:-todoapp}:${MONGO_APP_PASSWORD:-changeme}@db:27017/${MONGO_DB_NAME:-medishop_todos}?authSource=${MONGO_DB_NAME:-medishop_todos}
+      JWT_SECRET:  ${JWT_SECRET:-dev_secret_change_in_prod_min32chars}
+      JWT_EXPIRES: 7d
+      FRONTEND_URL: http://localhost:3001
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - medishop-network
+    volumes:
+      # Hot reload en développement
+      - ./app/backend/src:/app/src:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # ── Frontend React ──────────────────────────────────────────────
+  front:
+    build:
+      context: ./app/frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: ${REACT_APP_API_URL:-http://localhost:3000}
+    container_name: medishop-front
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    depends_on:
+      back:
+        condition: service_healthy
+    networks:
+      - medishop-network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+# ── Volumes persistants ─────────────────────────────────────────────
+volumes:
+  mongo_data:
+    driver: local
+
+# ── Réseau interne ──────────────────────────────────────────────────
+networks:
+  medishop-network:
+    driver: bridge
+    name: medishop-network

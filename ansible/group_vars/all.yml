@@ -1,0 +1,26 @@
+##############################################
+# group_vars/all.yml
+# Variables partagées pour tous les hôtes
+##############################################
+
+# ── Projet ─────────────────────────────────────────────────────────────────
+project_name: medishop-todo
+docker_registry: docker.io
+docker_username: "{{ lookup('env', 'DOCKER_USERNAME') }}"
+
+# ── Docker ─────────────────────────────────────────────────────────────────
+docker_compose_version: "2.24.0"
+docker_network_name: medishop-network
+
+# ── Images Docker ───────────────────────────────────────────────────────────
+front_image: "{{ docker_username }}/{{ project_name }}-front"
+back_image:  "{{ docker_username }}/{{ project_name }}-back"
+db_image:    "mongo:7.0"
+
+# ── Ports ──────────────────────────────────────────────────────────────────
+front_port: 3001    # Port du conteneur front (React)
+back_port:  3000    # Port de l'API Node.js
+db_port:    27017   # Port MongoDB
+
+# ── Application ─────────────────────────────────────────────────────────────
+node_env: production

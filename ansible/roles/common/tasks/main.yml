@@ -1,0 +1,90 @@
+##############################################
+# roles/common/tasks/main.yml
+# Tâches communes à TOUTES les instances
+# Installe Docker, Docker Compose, outils de base
+##############################################
+
+---
+- name: "COMMON | Mettre à jour le cache apt"
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: "COMMON | Installer les dépendances système"
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - python3-pip
+      - git
+      - htop
+      - vim
+      - net-tools
+    state: present
+  become: true
+
+# ── Docker ─────────────────────────────────────────────────────────────────
+
+- name: "COMMON | Créer le répertoire pour la clé GPG Docker"
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: "COMMON | Télécharger et installer la clé GPG Docker"
+  ansible.builtin.shell: |
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+    gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  args:
+    creates: /etc/apt/keyrings/docker.gpg
+  become: true
+
+- name: "COMMON | Ajouter le dépôt Docker"
+  ansible.builtin.apt_repository:
+    repo: >
+      deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg]
+      https://download.docker.com/linux/ubuntu
+      {{ ansible_distribution_release }} stable
+    state: present
+    filename: docker
+  become: true
+
+- name: "COMMON | Installer Docker Engine"
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+  become: true
+
+- name: "COMMON | Démarrer et activer Docker"
+  ansible.builtin.systemd:
+    name: docker
+    state: started
+    enabled: true
+  become: true
+
+- name: "COMMON | Ajouter l'utilisateur ubuntu au groupe docker"
+  ansible.builtin.user:
+    name: ubuntu
+    groups: docker
+    append: true
+  become: true
+
+- name: "COMMON | Vérifier que Docker fonctionne"
+  ansible.builtin.command: docker --version
+  register: docker_version
+  changed_when: false
+
+- name: "COMMON | Afficher la version Docker"
+  ansible.builtin.debug:
+    msg: "Docker installé : {{ docker_version.stdout }}"

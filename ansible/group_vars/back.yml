@@ -1,0 +1,9 @@
+##############################################
+# group_vars/back.yml
+# Variables spécifiques à l'instance Back
+##############################################
+
+back_container_name: "medishop-back"
+
+# Adresse privée de la DB (injectée à l'exécution)
+db_private_ip: "{{ hostvars['db-server']['ansible_host'] }}"
