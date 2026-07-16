@@ -148,7 +148,7 @@ jobs:
         run: |
           # Script de déploiement avec gestion des erreurs et rollback
           ssh -i ~/.ssh/medishop.pem \
-              -o ProxyJump="${{ env.SSH_USER }}@${{ secrets.FRONT_HOST }}" \
+              -o ProxyCommand="ssh -i ~/.ssh/medishop.pem -o StrictHostKeyChecking=no -W %h:%p ${{ env.SSH_USER }}@${{ secrets.FRONT_HOST }}" \
               -o StrictHostKeyChecking=no \
               "${{ env.SSH_USER }}@${{ secrets.BACK_HOST }}" << 'DEPLOY_SCRIPT'
 
