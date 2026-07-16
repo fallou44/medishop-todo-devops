@@ -4,9 +4,9 @@
 ##############################################
 
 # ── Nginx ──────────────────────────────────────────────────────────────────
-nginx_domain: "todo.medishop.example.com"  # Remplacer par votre domaine
+nginx_domain: "13.38.30.115.nip.io"  # Remplacé par le DNS dynamique
 nginx_config_name: "medishop-todo"
-certbot_email: "admin@medishop.example.com"  # Remplacer par votre email
+certbot_email: "fadilops@gmail.com"  # Remplacé par un email fictif/valide
 
 # Adresse privée du Back pour le proxy Nginx
 back_private_ip: "{{ hostvars['back-server']['ansible_host'] }}"

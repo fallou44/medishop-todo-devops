@@ -42,12 +42,10 @@ def generate_inventory():
 front-server ansible_host={front_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/{key_name}.pem
 
 [back]
-back-server ansible_host={back_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/{key_name}.pem \\
-    ansible_ssh_common_args='-o ProxyJump=ubuntu@{front_ip} -o StrictHostKeyChecking=no'
+back-server ansible_host={back_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/{key_name}.pem ansible_ssh_common_args='-o ProxyCommand="ssh -i ~/.ssh/{key_name}.pem -o StrictHostKeyChecking=no -W %h:%p ubuntu@{front_ip}"'
 
 [db]
-db-server ansible_host={db_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/{key_name}.pem \\
-    ansible_ssh_common_args='-o ProxyJump=ubuntu@{front_ip} -o StrictHostKeyChecking=no'
+db-server ansible_host={db_ip} ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/{key_name}.pem ansible_ssh_common_args='-o ProxyCommand="ssh -i ~/.ssh/{key_name}.pem -o StrictHostKeyChecking=no -W %h:%p ubuntu@{front_ip}"'
 
 [all:vars]
 ansible_ssh_common_args='-o StrictHostKeyChecking=no'

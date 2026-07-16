@@ -1,0 +1,68 @@
+{
+  "ansible_inventory_vars": {
+    "sensitive": false,
+    "type": [
+      "object",
+      {
+        "back_ip": "string",
+        "db_ip": "string",
+        "front_ip": "string"
+      }
+    ],
+    "value": {
+      "back_ip": "10.0.2.208",
+      "db_ip": "10.0.2.103",
+      "front_ip": "13.38.30.115"
+    }
+  },
+  "back_private_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "10.0.2.208"
+  },
+  "db_private_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "10.0.2.103"
+  },
+  "front_public_dns": {
+    "sensitive": false,
+    "type": "string",
+    "value": "ec2-13-38-30-115.eu-west-3.compute.amazonaws.com"
+  },
+  "front_public_ip": {
+    "sensitive": false,
+    "type": "string",
+    "value": "13.38.30.115"
+  },
+  "private_subnet_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "subnet-035d4c1615f0417c1"
+  },
+  "public_subnet_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "subnet-0868eb0b646b2b8ab"
+  },
+  "ssh_command_back": {
+    "sensitive": false,
+    "type": "string",
+    "value": "ssh -i ~/.ssh/medishop-key.pem -J ubuntu@13.38.30.115 ubuntu@10.0.2.208"
+  },
+  "ssh_command_db": {
+    "sensitive": false,
+    "type": "string",
+    "value": "ssh -i ~/.ssh/medishop-key.pem -J ubuntu@13.38.30.115 ubuntu@10.0.2.103"
+  },
+  "ssh_command_front": {
+    "sensitive": false,
+    "type": "string",
+    "value": "ssh -i ~/.ssh/medishop-key.pem ubuntu@13.38.30.115"
+  },
+  "vpc_id": {
+    "sensitive": false,
+    "type": "string",
+    "value": "vpc-0a456f0715889b77f"
+  }
+}

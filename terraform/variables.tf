@@ -58,7 +58,7 @@ variable "instance_type" {
 variable "ami_id" {
   description = "AMI Ubuntu 22.04 LTS (eu-west-3)"
   type        = string
-  default     = "ami-0c02fb55956c7d316" # Ubuntu 22.04 LTS - eu-west-3
+  default     = "ami-015cabafc8f6249fe" # Ubuntu 22.04 LTS - eu-west-3
 }
 
 variable "key_pair_name" {

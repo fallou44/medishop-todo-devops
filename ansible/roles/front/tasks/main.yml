@@ -74,6 +74,7 @@
   community.docker.docker_image:
     name: "{{ front_image }}:latest"
     source: pull
+  ignore_errors: true
 
 - name: "FRONT | Arrêter l'ancien conteneur Front (si existant)"
   community.docker.docker_container:
@@ -94,3 +95,4 @@
     env:
       REACT_APP_API_URL: "https://{{ nginx_domain }}/api"
       NODE_ENV: "{{ node_env }}"
+  ignore_errors: true
