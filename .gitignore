@@ -30,6 +30,8 @@ ansible/.vault_pass
 .env.production
 .env.*
 !.env.example
+set_github_secrets.py  # Script d'automatisation temporaire
+
 
 # ── Node.js ────────────────────────────────────────────────────────
 node_modules/

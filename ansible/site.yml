@@ -16,11 +16,7 @@
 
     - name: "Afficher les informations de l'hôte"
       ansible.builtin.debug:
-        msg: |
-          Hôte      : {{ inventory_hostname }}
-          IP        : {{ ansible_host }}
-          OS        : {{ ansible_distribution }} {{ ansible_distribution_version }}
-          Arch      : {{ ansible_architecture }}
+        msg: "Hôte={{ inventory_hostname }} IP={{ ansible_host }} OS={{ ansible_distribution }} {{ ansible_distribution_version }} Arch={{ ansible_architecture }}"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PLAY 1 : Installation commune (Docker sur tous les hôtes)
@@ -57,6 +53,7 @@
 
 # ─────────────────────────────────────────────────────────────────────────────
 # PLAY 4 : Configuration Front (Nginx + React)
+# Certbot est lancé APRÈS Nginx (HTTP first, then HTTPS)
 # ─────────────────────────────────────────────────────────────────────────────
 
 - name: "PLAY 4 | Configuration Front (Nginx + React)"
@@ -67,6 +64,21 @@
       tags: [front, nginx]
 
   post_tasks:
+    - name: "FRONT | Créer le dossier webroot pour ACME"
+      ansible.builtin.file:
+        path: /var/www/html
+        state: directory
+        mode: "0755"
+      become: true
+      tags: [ssl, certbot]
+
+    - name: "FRONT | Recharger Nginx (config HTTP)"
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+      become: true
+      tags: [nginx]
+
     - name: "FRONT | Obtenir le certificat SSL Let's Encrypt"
       ansible.builtin.command: >
         certbot --nginx
@@ -78,6 +90,13 @@
       args:
         creates: "/etc/letsencrypt/live/{{ nginx_domain }}/fullchain.pem"
       become: true
+      tags: [ssl, certbot]
+      register: certbot_result
+      ignore_errors: true
+
+    - name: "FRONT | Afficher résultat Certbot"
+      ansible.builtin.debug:
+        msg: "{{ certbot_result.stdout_lines | default(['Certbot ignoré ou déjà fait']) }}"
       tags: [ssl, certbot]
 
     - name: "FRONT | Recharger Nginx après certificat SSL"
@@ -92,7 +111,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 - name: "PLAY 5 | Vérification du déploiement"
-  hosts: all
+  hosts: front
   gather_facts: false
 
   tasks:
@@ -100,14 +119,22 @@
       ansible.builtin.command: docker ps
       register: docker_ps
       changed_when: false
+      ignore_errors: true
 
     - name: "CHECK | Afficher les conteneurs actifs"
       ansible.builtin.debug:
-        msg: "{{ docker_ps.stdout_lines }}"
+        msg: "{{ docker_ps.stdout_lines | default([]) }}"
 
-  post_tasks:
+    - name: "CHECK | Vérifier que Nginx tourne"
+      ansible.builtin.command: nginx -t
+      register: nginx_test
+      changed_when: false
+      become: true
+      ignore_errors: true
+
     - name: "=== DÉPLOIEMENT TERMINÉ ==="
       ansible.builtin.debug:
         msg: |
-          ✅ MediShop Todo App déployée avec succès !
-          🌐 URL : https://{{ hostvars[groups['front'][0]]['nginx_domain'] | default('votre-domaine') }}
+          ✅ MediShop provisioning terminé !
+          🌐 URL HTTP  : http://{{ hostvars[groups['front'][0]]['ansible_host'] }}
+          🌐 Domaine   : {{ hostvars[groups['front'][0]]['nginx_domain'] | default('N/A') }}

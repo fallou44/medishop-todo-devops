@@ -4,11 +4,8 @@
 ##############################################
 
 db_container_name: "medishop-db"
-mongo_db_name: "medishop_todos"
 
 # Les secrets sont injectés via GitHub Secrets / variables d'env
 # NE PAS mettre les vrais mots de passe ici !
 mongo_root_username: "{{ lookup('env', 'MONGO_ROOT_USERNAME') | default('admin') }}"
 mongo_root_password: "{{ lookup('env', 'MONGO_ROOT_PASSWORD') | default('changeme') }}"
-mongo_app_username:  "{{ lookup('env', 'MONGO_APP_USERNAME') | default('todoapp') }}"
-mongo_app_password:  "{{ lookup('env', 'MONGO_APP_PASSWORD') | default('changeme') }}"

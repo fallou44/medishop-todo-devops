@@ -6,7 +6,7 @@
 # ── Projet ─────────────────────────────────────────────────────────────────
 project_name: medishop-todo
 docker_registry: docker.io
-docker_username: "{{ lookup('env', 'DOCKER_USERNAME') }}"
+docker_username: "{{ lookup('env', 'DOCKER_USERNAME') | default('fadildev', true) }}"
 
 # ── Docker ─────────────────────────────────────────────────────────────────
 docker_compose_version: "2.24.0"
@@ -24,3 +24,8 @@ db_port:    27017   # Port MongoDB
 
 # ── Application ─────────────────────────────────────────────────────────────
 node_env: production
+
+# ── Database Shared Config ──────────────────────────────────────────────────
+mongo_db_name: "medishop_todos"
+mongo_app_username:  "{{ lookup('env', 'MONGO_APP_USERNAME') | default('todoapp', true) }}"
+mongo_app_password:  "{{ lookup('env', 'MONGO_APP_PASSWORD') | default('changeme', true) }}"
