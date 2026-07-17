@@ -61,4 +61,4 @@ Voir le **[📖 GUIDE complet](./GUIDE.md)** pour les instructions détaillées.
 
 ## 📜 Licence
 
-TP éducatif — MediShop — DevOps Junior
+TP éducatif — MediShop — 
